@@ -27,6 +27,9 @@ This plugin provides a set of user functions, output syntax, and key mappings wh
 directly within their VIM environment. It supports debugging via Xdebug, which may connect to a Vdebug frontend within
 vim.
 
+Key bindings are local to php buffers only.
+To run a test on a file, use the `<leader>sf` command, which will test the currently open file.
+
 ## Commands
 
 When in a PHP test file, the following commands can be used, assuming `,` as the `<leader>` key.
@@ -68,6 +71,9 @@ When in a PHP test file, the following commands can be used, assuming `,` as the
 
 ### Debugging settings
 
+* `g:phpTestsDebug` (default `0`) - Whether or not debug mode is enabled. Set this to `1` in your `.vimrc` to enable test
+  debugging by default.
+
 * `g:phpTestsDebugSSH` (default `g:phpTestsSSH . ' -R 9000:localhost:9000'`) - The SSH command used when debugging tests.
 
 * `g:phpTestsDebugEnvironment` (default `'XDEBUG_CONFIG="IDEKEY=vim remote_host=localhost"'`) - Any environment
@@ -78,9 +84,10 @@ When in a PHP test file, the following commands can be used, assuming `,` as the
 
 ## Customization
 
-The default key bindings can be disabled by specifying `g:phpTestsCommandLeader = ''` in your `.vimrc`.
+You can change the leader key by setting `g:phpTestsCommandLeader` in your `.vimrc`, which defines the prefix for all
+the default commands.  The default key bindings can be disabled entirely by specifying `g:phpTestsCommandLeader = ''`
 
-You can configure your own key bindings against the methods listed under [#commands] instead.
+You can configure your own key bindings against the methods listed under "Commands" instead.
 
 ## Remote Testing
 

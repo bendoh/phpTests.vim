@@ -3,26 +3,32 @@ if v:version < 800
   throw 'Sorry, the phpTests plugin requires VIM version 8 or higher'
 endif
 
-if !exists('g:phpTestsPHPUnit') | let g:phpTestsPHPUnit = '/usr/local/bin/phpunit' | endif
+if !exists('g:phpTestsCommandLeader') | let g:phpTestsCommandLeader = '<leader>' | endif
 if !exists('g:phpTestsInterpreter') | let g:phpTestsInterpreter = '/usr/bin/php' | endif
-if !exists('g:phpTestsDebug') | let g:phpTestsDebug = 0 | endif
+if !exists('g:phpTestsPHPUnit') | let g:phpTestsPHPUnit = '/usr/local/bin/phpunit' | endif
+if !exists('g:phpTestsTarget') | let g:phpTestsRemoteRoot='' | endif
 if !exists('g:phpTestsEnvironmentVars') | let g:phpTestsEnvironmentVars = '' | endif
-if !exists('g:phpTestsDebugEnvironment') | let g:phpTestsDebugEnvironment = 'XDEBUG_CONFIG="IDEKEY=vim remote_host=localhost"' | endif
-if !exists('g:phpTestsDebugCommand') | let g:phpTestsDebugCommand = 'VdebugStart' | endif
 if !exists('g:phpTestsLastFilter') | let g:phpTestsLastFilter = '' | endif
 if !exists('g:phpTestsOutputFormat') | let g:phpTestsOutputFormat='--teamcity' | endif
-if !exists('g:phpTestsSSH') | let g:phpTestsSSH='' | endif
-if !exists('g:phpTestsDebugSSH') | let g:phpTestsDebugSSH=g:phpTestsSSH . ' -R 9000:localhost:9000' | endif
 
+if !exists('g:phpTestsSSH') | let g:phpTestsSSH='' | endif
 if !exists('g:phpTestsLocalRoot') | let g:phpTestsLocalRoot='' | endif
 if !exists('g:phpTestsRemoteRoot') | let g:phpTestsRemoteRoot='' | endif
-if !exists('g:phpTestsTarget') | let g:phpTestsRemoteRoot='' | endif
+
+if !exists('g:phpTestsDebugSSH') | let g:phpTestsDebugSSH=g:phpTestsSSH . ' -R 9000:localhost:9000' | endif
+if !exists('g:phpTestsDebugEnvironment') | let g:phpTestsDebugEnvironment = 'XDEBUG_CONFIG="IDEKEY=vim remote_host=localhost"' | endif
+if !exists('g:phpTestsDebugCommand') | let g:phpTestsDebugCommand = 'VdebugStart' | endif
+
+" Is debugging enabled by default?
+if !exists('g:phpTestsDebug') | let g:phpTestsDebug = 0 | endif
 
 " Did we enter the output window automatically, or intentionally?
 if !exists('s:autoEntered') | let s:autoEntered = 0 | endif
 
+let s:outputLineContinue = '> '
+
 function! phpTests#toggleDebugging()
-  let g:phpTestsDebug = !g:phpTestsDebug 
+  let g:phpTestsDebug = !g:phpTestsDebug
   echo 'phpTests: PHP test debugging is ' . (g:phpTestsDebug ? 'enabled' : 'disabled')
 endfunction
 
@@ -37,7 +43,7 @@ endfunction
 
 function! phpTests#open()
   badd TestOutput
-  
+
   if bufwinnr('%') != bufwinnr('TestOutput')
     let s:prevBufWinNR = bufwinnr('%')
   endif
@@ -68,9 +74,8 @@ function! phpTests#addOutput(out)
 
   for l:nextLine in l:lines[1:]
     if l:nextLine != ' '
-      call append('$', repeat(' ', s:indent * 3) . '> ' . l:nextLine)
+      call append('$', repeat(' ', s:indent * 3) . s:outputLineContinue . l:nextLine)
     endif
-      
   endfor
 
   normal G
@@ -95,7 +100,6 @@ function! phpTests#appendLine(out)
   exec s:lastLineAppended
   normal $
   exec 'normal a' . a:out
-  
   call phpTests#return()
 endfunction
 
@@ -122,25 +126,16 @@ function! phpTests#addDiff(expected, actual)
 
   let eTemp = tempname()
   let aTemp = tempname()
-  let oTemp = tempname()
-
-  echo eLines
-  echo aLines
 
   call writefile(eLines, eTemp)
   call writefile(aLines, aTemp)
 
-  silent execute join(['!diff -au', eTemp, aTemp, '>' . oTemp])
+  silent let result = systemlist(join(['diff -au', eTemp, aTemp]))[2:]
 
-  silent let result = readfile(oTemp)[2:]
-
-  let result = map
-  call phpTests#addOutput('- Expected')
-  call phpTests#addOutput('+ Actual')
-
+  let s:outputLineContinue = '| '
   call phpTests#addOutput(join(result, '|n'))
-  silent execute join(['!rm', eTemp, aTemp, oTemp])
-  redraw!
+  let s:outputLineContinue = '> '
+  silent call system('!rm ' . eTemp . ' ' . aTemp)
 endfunction
 
 function! phpTests#handleOutput(channel, line)
@@ -202,13 +197,14 @@ function! phpTests#handleOutput(channel, line)
     call phpTests#updateLineStatus('!!!')
 
     if l:props.type == 'comparisonFailure'
+      call phpTests#addOutput('Message: ' . l:props.message)
       call phpTests#addDiff(l:props.expected, l:props.actual)
     elseif l:props.type == '' && l:props.message != ''
       call phpTests#addOutput('Message: ' . l:props.message)
     elseif l:props.type != ''
       call phpTests#appendLine(' (' . l:props.type . ')')
     endif
-    
+
     let s:failure = 1
   elseif l:event == 'testFinished'
     if s:ignored == 1
@@ -262,7 +258,7 @@ function! phpTests#testMethod()
 
   " figure out mapped remote file path
   let l:mapped = substitute(expand('%:p'), g:phpTestsLocalRoot, g:phpTestsRemoteRoot, '')
-  
+
   " search backwards for the containing method from the end of the current
   " line
   call cursor(l:cursorPos[1]+1, 0)
@@ -305,9 +301,30 @@ function! phpTests#status()
   endif
 endfunction
 
+function! phpTests#initBuffer()
+  if &filetype == 'php'
+    " Mappings that only apply in PHP buffers
+    exec 'nnoremap <buffer> <silent> ' . g:phpTestsCommandLeader . 'sm :call phpTests#testMethod()<CR>'
+    exec 'nnoremap <buffer> <silent> ' . g:phpTestsCommandLeader . 'sf :call phpTests#testFile()<CR>'
+  endif
+endfunction
+
+function! phpTests#initOutput()
+  setlocal buftype=nofile syntax=php_test_output wrap norelativenumber nonumber textwidth=0 colorcolumn=
+  call phpTests#setEnterFlag()
+  noremap <silent> <buffer> <C-c> :silent call phpTests#stop()<CR>
+endfunction
+
+" Global mappings
+exec 'nnoremap <silent> ' . g:phpTestsCommandLeader . 'st :call phpTests#start()<CR>'
+exec 'nnoremap <silent> ' . g:phpTestsCommandLeader . 'sa :call phpTests#startAgain()<CR>'
+exec 'nnoremap <silent> ' . g:phpTestsCommandLeader . 'ss :call phpTests#stop()<CR>'
+exec 'nnoremap <silent> ' . g:phpTestsCommandLeader . 'sd :call phpTests#toggleDebugging()<CR>'
+
 augroup PhpTests
   au!
-  au BufEnter TestOutput setlocal buftype=nofile syntax=php_test_output wrap norelativenumber nonumber textwidth=0 colorcolumn= | call phpTests#setEnterFlag() | noremap <silent> <buffer> <C-c> :silent call phpTests#stop()<CR>
+  au BufRead,BufNew * call phpTests#initBuffer()
+  au BufEnter TestOutput call phpTests#initOutput()
 augroup END
 
 function! phpTests#startFiltered(filter)
@@ -336,7 +353,7 @@ function! phpTests#startFiltered(filter)
 
   let s:exitCode = 0
   let s:testJob = job_start(l:command, {
-        \ 'in_io': 'null', 
+        \ 'in_io': 'null',
         \ 'out_cb': 'phpTests#handleOutput',
         \ 'err_cb': 'phpTests#handleError',
         \ 'exit_cb': 'phpTests#handleExit',
@@ -371,4 +388,4 @@ function! phpTests#stop()
   if exists('s:testJob')
     call job_stop(s:testJob)
   endif
-endfunction 
+endfunction

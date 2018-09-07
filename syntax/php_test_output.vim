@@ -9,7 +9,11 @@ syn region phpTestSuccessMethod matchgroup=phpTestSuccess start=/+++/ end=/$/ co
 syn match phpTestTime /\d\+\zems/ contained
 syn match phpTestPending /^\.\.\./
 syn match phpTestFailures /^FAILURES!/
+syn match phpTestExpected /| - .*/
+syn match phpTestActual /| + .*/
 
+hi link phpTestExpected DiffDelete
+hi link phpTestActual DiffAdd
 hi link phpTestCommand Identifier
 hi link phpTestError Debug
 hi link phpTestPending Comment
