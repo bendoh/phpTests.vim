@@ -6,12 +6,14 @@ syn region phpTestErrorMessage matchgroup=phpTestError start=/^Error:/ end=/$/
 syn region phpTestGroup matchgroup=phpTestGroupMarker start=/>>>/ end=/$/ 
 syn region phpTestFailureInfo matchgroup=phpTestFailure start=/!!!/ end=/$/ contains=phpTestTime
 syn region phpTestSuccessMethod matchgroup=phpTestSuccess start=/+++/ end=/$/ contains=phpTestTime
+syn region phpTestSkippedLine matchgroup=phpTestSkipped start=/\~\~\~/ end=/$/ contains=phpTestTime
 syn match phpTestTime /\d\+\zems/ contained
 syn match phpTestPending /^\.\.\./
 syn match phpTestFailures /^FAILURES!/
 syn match phpTestExpected /| - .*/
 syn match phpTestActual /| + .*/
 
+hi link phpTestSkipped Special
 hi link phpTestExpected DiffDelete
 hi link phpTestActual DiffAdd
 hi link phpTestCommand Identifier
@@ -25,4 +27,5 @@ hi link phpTestGroupMarker String
 hi link phpTestGroup Label
 hi link phpTestFailures Underlined
 hi link phpTestFailure Error
+hi link phpTestTime Statement
 hi link phpTestTime Statement

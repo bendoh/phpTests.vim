@@ -113,7 +113,7 @@ function! phpTests#updateLineStatus(line)
 endfunction
 
 function! phpTests#chomp(line)
-  return substitute(a:line, '\s*\n\+$', '', '')
+  return substitute(a:line, '\s*\n\*$', '', '')
 endfunction
 
 function! phpTests#trim(line)
@@ -172,7 +172,7 @@ function! phpTests#handleOutput(channel, line)
     let l:matches = matchlist(l:content, '\<' . l:prop . '=''\(.\{-}\)|\@<!''')
 
     if l:matches != []
-      let l:props[l:prop] = l:matches[1]
+      let l:props[l:prop] = phpTests#chomp(l:matches[1])
 
       " Replace escaped characters
       for l:escapechar in ['[', ']', '''']
@@ -221,7 +221,7 @@ function! phpTests#handleOutput(channel, line)
     let s:indent -= 1
   elseif l:event == 'testIgnored'
     call phpTests#updateLineStatus('~~~')
-    call phpTests#appendLine('   reason: ' . l:props.message)
+    call phpTests#addOutput('~ Reason: ' . l:props.message)
 
     let s:ignored = 1
   elseif l:event != ''
