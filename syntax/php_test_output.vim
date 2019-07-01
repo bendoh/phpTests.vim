@@ -12,7 +12,9 @@ syn match phpTestPending /^\.\.\./
 syn match phpTestFailures /^FAILURES!/
 syn match phpTestExpected /| - .*/
 syn match phpTestActual /| + .*/
+syn match phpTestNotice /^\s*\*\*\* .*/
 
+hi link phpTestNotice Todo
 hi link phpTestSkipped Special
 hi link phpTestExpected DiffDelete
 hi link phpTestActual DiffAdd

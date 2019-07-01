@@ -1,115 +1,95 @@
-" Make sure we're running VIM version 8 or higher.
+""
+" PHP (and likely other language) test invoker and output munger
+" for VIM 8.
+"
+" Author: Benjamin Doherty <bendoh@github>
+"/
 if v:version < 800
-  throw 'Sorry, the phpTests plugin requires VIM version 8 or higher'
+  finish
 endif
 
-if !exists('g:phpTestsCommandLeader') | let g:phpTestsCommandLeader = '<leader>' | endif
-if !exists('g:phpTestsInterpreter') | let g:phpTestsInterpreter = '/usr/bin/php' | endif
-if !exists('g:phpTestsPHPUnit') | let g:phpTestsPHPUnit = '/usr/local/bin/phpunit' | endif
-if !exists('g:phpTestsTarget') | let g:phpTestsRemoteRoot='' | endif
-if !exists('g:phpTestsEnvironmentVars') | let g:phpTestsEnvironmentVars = '' | endif
-if !exists('g:phpTestsLastFilter') | let g:phpTestsLastFilter = '' | endif
-if !exists('g:phpTestsOutputFormat') | let g:phpTestsOutputFormat='--teamcity' | endif
-
-if !exists('g:phpTestsSSH') | let g:phpTestsSSH='' | endif
-if !exists('g:phpTestsLocalRoot') | let g:phpTestsLocalRoot='' | endif
-if !exists('g:phpTestsRemoteRoot') | let g:phpTestsRemoteRoot='' | endif
-
-if !exists('g:phpTestsDebugSSH') | let g:phpTestsDebugSSH=g:phpTestsSSH . ' -R 9000:localhost:9000' | endif
-if !exists('g:phpTestsDebugEnvironment') | let g:phpTestsDebugEnvironment = 'XDEBUG_CONFIG="IDEKEY=vim remote_host=localhost"' | endif
-if !exists('g:phpTestsDebugCommand') | let g:phpTestsDebugCommand = 'VdebugStart' | endif
-
-" Is debugging enabled by default?
-if !exists('g:phpTestsDebug') | let g:phpTestsDebug = 0 | endif
-
-" Did we enter the output window automatically, or intentionally?
-if !exists('s:autoEntered') | let s:autoEntered = 0 | endif
+if !exists('g:phpTestsOptions') 
+  let g:phpTestsOptions = {
+      \ 'CommandLeader': '<leader>' ,
+      \ 'Interpreter': '/usr/bin/php' ,
+      \ 'PHPUnit': '/usr/local/bin/phpunit' ,
+      \ 'Target': '' ,
+      \ 'Environment': '',
+      \ 'OutputFormat': '--teamcity',
+      \ 'Shell': '',
+      \ 'LocalRoot': '',
+      \ 'RemoteRoot': '',
+      \ 'DebugShell': '',
+      \ 'DebugEnvironment': 'XDEBUG_CONFIG="IDEKEY=vim remote_host=localhost"',
+      \ 'DebugCommand': 'VdebugStart',
+      \ 'Debug': 0
+      \ }
+endif
 
 let s:outputLineContinue = '> '
 
-function! phpTests#toggleDebugging()
-  let g:phpTestsDebug = !g:phpTestsDebug
-  echo 'phpTests: PHP test debugging is ' . (g:phpTestsDebug ? 'enabled' : 'disabled')
-endfunction
+let g:testOutputBufferName = 'TestOutput'
 
-" Set a flag to indicate whether or not we clicked into the output buffer
-" or if we were programatically taken there. Use this to determine if we
-" stay in the window or not
-function! phpTests#setEnterFlag()
-  if s:autoEntered == 0
-    let s:prevBufWinNR = winnr()
-  endif
+function! phpTests#toggleDebugging()
+  let g:phpTestsOptions['Debug'] = !g:phpTestsOptions['Debug']
+  echo 'phpTests: PHP test debugging is ' . (g:phpTestsOptions['Debug'] ? 'enabled' : 'disabled')
 endfunction
 
 function! phpTests#open()
-  badd TestOutput
-
-  if bufwinnr('%') != bufwinnr('TestOutput')
-    let s:prevBufWinNR = bufwinnr('%')
+  if !bufexists(g:testOutputBufferName)
+    badd TestOutput
   endif
 
-  if bufwinnr('TestOutput') == -1
+  if bufwinnr(g:testOutputBufferName) == -1
     sb! +wincmd\ J|res\ 10 TestOutput
     normal G
   endif
-
-  let s:autoEntered = 1
-
-  exec bufwinnr('TestOutput') . 'wincmd w'
 endfunction
 
-function! phpTests#return()
-  if s:prevBufWinNR != bufwinnr('TestOutput')
-    wincmd p
-  endif
-  let s:autoEntered = 0
-endfunction
-
-" Append a output line but don't track it as the last line
+" Append output line(s) as a block
 function! phpTests#addOutput(out)
-  call phpTests#open()
   let l:lines = split(phpTests#chomp(a:out), '|n', 1)
 
-  call append('$', repeat(' ', s:indent * 3) . l:lines[0])
+  call appendbufline(g:testOutputBufferName, '$', repeat(' ', s:indent * 3) . l:lines[0])
 
   for l:nextLine in l:lines[1:]
-    if l:nextLine != ' '
-      call append('$', repeat(' ', s:indent * 3) . s:outputLineContinue . l:nextLine)
-    endif
+    call appendbufline(g:testOutputBufferName, '$', repeat(' ', s:indent * 3) . s:outputLineContinue . l:nextLine)
   endfor
 
-  normal G
+  " Keep scrolling to the bottom
+  call phpTests#scroll()
+endfunction
 
-  call phpTests#return()
+function! phpTests#scroll()
+  let l:thiswinnr = bufwinnr('%')
+  let l:winnr = bufwinnr(g:testOutputBufferName)
+  
+  exec l:winnr . 'windo normal G'
+  if l:winnr != l:thiswinnr
+    winc p
+  endif
+
 endfunction
 
 " Add a line and mark it as the last line
 function! phpTests#addLine(out)
-  call phpTests#open()
+  let s:lastLine = a:out
+  call appendbufline(g:testOutputBufferName, '$', repeat(' ', s:indent * 3) . s:lastLine)
 
-  call append('$', repeat(' ', s:indent * 3) . a:out)
-  normal G
-  let s:lastLineAppended = getcurpos()[1]
+  call phpTests#scroll()
+endfunction
 
-  call phpTests#return()
+function! phpTests#replaceLine(line)
+  call deletebufline(g:testOutputBufferName, '$', '$')
+  call phpTests#addLine(a:line)
 endfunction
 
 function! phpTests#appendLine(out)
-  call phpTests#open()
-
-  exec s:lastLineAppended
-  normal $
-  exec 'normal a' . a:out
-  call phpTests#return()
+  call phpTests#replaceLine(s:lastLine . a:out)
 endfunction
 
 function! phpTests#updateLineStatus(line)
-  call phpTests#open()
-  exec s:lastLineAppended
-  normal 0
-  exec 'normal ' . (s:indent * 3) . 'l'
-  exec 'normal R' . a:line
-  call phpTests#return()
+  call phpTests#replaceLine(substitute(s:lastLine, '^...', a:line, ''))
 endfunction
 
 function! phpTests#chomp(line)
@@ -141,12 +121,27 @@ endfunction
 function! phpTests#handleOutput(channel, line)
   " Chomp out any trailing whitespace
   let l:line = phpTests#chomp(a:line)
-  let idx = stridx(l:line, '##teamcity[')
 
   " Ignore empty lines
   if l:line == ''
     return
   endif
+
+  " Attempt to parse out terminal color escape sequences
+  let l:matches = matchlist(l:line, '^\s*\e[\(\d\+\|\d\+;\d\+\)m')
+  let l:colors = []
+
+  while !empty(l:matches)
+    let l:colors += [l:matches[1]]
+    let l:line = strpart(l:line, len(l:matches[0]))
+    let l:matches = matchlist(l:line, '^\e[\(\d\+\|\d\+;\d\+\)m')
+  endwhile
+
+  if !empty(l:colors)
+    let l:line = '***' . l:line
+  endif
+
+  let idx = stridx(l:line, '##teamcity[')
 
   " Emit any non-teamcity lines
   if l:idx == -1
@@ -178,6 +173,7 @@ function! phpTests#handleOutput(channel, line)
       for l:escapechar in ['[', ']', '''']
         let l:props[l:prop] = substitute(l:props[l:prop], '|' . l:escapechar, l:escapechar, 'g')
       endfor
+
     else
       let l:props[l:prop] = ''
     endif
@@ -229,7 +225,7 @@ function! phpTests#handleOutput(channel, line)
   endif
 
   if l:props.details != ''
-    call phpTests#addOutput('Details:|n' . substitute(l:props.details, g:phpTestsRemoteRoot, '', 'g'))
+    call phpTests#addOutput('Details:|n' . substitute(l:props.details, g:phpTestsOptions['RemoteRoot'], '', 'g'))
   endif
 endfunction
 
@@ -238,8 +234,8 @@ function! phpTests#handleError(channel, err)
 endfunction
 
 function! phpTests#handleExit(channel, code)
-  unlet s:testJob
   let s:exitCode = a:code
+  unlet! s:testJob
   redraws!
 endfunction
 
@@ -257,7 +253,7 @@ function! phpTests#testMethod()
   let l:cursorPos = getpos('.')
 
   " figure out mapped remote file path
-  let l:mapped = substitute(expand('%:p'), g:phpTestsLocalRoot, g:phpTestsRemoteRoot, '')
+  let l:mapped = substitute(expand('%:p'), g:phpTestsOptions['LocalRoot'], g:phpTestsOptions['RemoteRoot'], '')
 
   " search backwards for the containing method from the end of the current
   " line
@@ -287,7 +283,7 @@ function! phpTests#testFile()
   endif
 
   " search backwards for the containing method
-  let mapped = substitute(expand('%:p'), g:phpTestsLocalRoot, g:phpTestsRemoteRoot, '')
+  let mapped = substitute(expand('%:p'), g:phpTestsOptions['LocalRoot'], g:phpTestsOptions['RemoteRoot'], '')
 
   call phpTests#startFiltered(l:mapped)
 endfunction
@@ -304,22 +300,23 @@ endfunction
 function! phpTests#initBuffer()
   if &filetype == 'php'
     " Mappings that only apply in PHP buffers
-    exec 'nnoremap <buffer> <silent> ' . g:phpTestsCommandLeader . 'sm :call phpTests#testMethod()<CR>'
-    exec 'nnoremap <buffer> <silent> ' . g:phpTestsCommandLeader . 'sf :call phpTests#testFile()<CR>'
+    exec 'nnoremap <buffer> <silent> ' . g:phpTestsOptions['CommandLeader'] . 'sm :call phpTests#testMethod()<CR>'
+    exec 'nnoremap <buffer> <silent> ' . g:phpTestsOptions['CommandLeader'] . 'sf :call phpTests#testFile()<CR>'
   endif
 endfunction
 
 function! phpTests#initOutput()
-  setlocal buftype=nofile syntax=php_test_output wrap norelativenumber nonumber textwidth=0 colorcolumn=
-  call phpTests#setEnterFlag()
+  setlocal buftype=nofile syntax=php_test_output wrap norelativenumber nonumber textwidth=0 colorcolumn= noswapfile
   noremap <silent> <buffer> <C-c> :silent call phpTests#stop()<CR>
 endfunction
 
-" Global mappings
-exec 'nnoremap <silent> ' . g:phpTestsCommandLeader . 'st :call phpTests#start()<CR>'
-exec 'nnoremap <silent> ' . g:phpTestsCommandLeader . 'sa :call phpTests#startAgain()<CR>'
-exec 'nnoremap <silent> ' . g:phpTestsCommandLeader . 'ss :call phpTests#stop()<CR>'
-exec 'nnoremap <silent> ' . g:phpTestsCommandLeader . 'sd :call phpTests#toggleDebugging()<CR>'
+function! phpTests#bindKeys()
+  " Global mappings
+  exec 'nnoremap <silent> ' . g:phpTestsOptions['CommandLeader'] . 'st :call phpTests#start()<CR>'
+  exec 'nnoremap <silent> ' . g:phpTestsOptions['CommandLeader'] . 'sa :call phpTests#startAgain()<CR>'
+  exec 'nnoremap <silent> ' . g:phpTestsOptions['CommandLeader'] . 'ss :call phpTests#stop()<CR>'
+  exec 'nnoremap <silent> ' . g:phpTestsOptions['CommandLeader'] . 'sd :call phpTests#toggleDebugging()<CR>'
+endfunction
 
 augroup PhpTests
   au!
@@ -327,26 +324,151 @@ augroup PhpTests
   au BufEnter TestOutput call phpTests#initOutput()
 augroup END
 
+" There HAS to be a better way to do this) == 1
+" Munge arguments like `foo "bar with" spaces` into a list like
+" ['foo', 'bar with', 'spaces']
+function! phpTests#splitQuotes(str)
+  let l:item = ''
+  let l:escape = 0
+  let l:inQuote = ''
+  let l:items = []
+
+  " Basic string parsing state machine
+  for l:i in range(0, strlen(a:str) - 1)
+    let l:char = a:str[l:i]
+
+    " Pull in escaped characters literally
+    if l:escape == 1
+      let l:item .= l:char
+      let l:escape = 0
+      continue
+    endif
+
+    if l:char == '\\'
+      let l:escape = 1
+      continue
+    endif
+
+    if l:inQuote != ''
+      " We're in a quote
+      if l:char != l:inQuote
+        let l:item .= l:char
+      else
+        " But this is the closing quote, so add the item
+        let l:inQuote = ''
+        call add(l:items, l:item)
+        let l:item = ''
+      endif
+
+      continue
+    elseif l:char =~ '\s'
+      if l:item != ''
+        call add(l:items, l:item)
+        let l:item = ''
+      endif
+
+      continue
+    endif
+    
+    if a:str[l:i] == '"' || a:str[l:i] == "'"
+      let l:inQuote = a:str[l:i]
+      continue
+    endif
+
+    let l:item .= l:char
+  endfor
+
+  if l:inQuote != ''
+    throw 'Unmatched quote `' . l:inQuote . '` in given string'
+  endif
+
+  if l:item != ''
+    call add(l:items, l:item)
+  endif
+    
+  return l:items
+endfunction
+
+function! phpTests#option(q_args)
+  let l:options = phpTests#splitQuotes(a:q_args)
+
+  if len(l:options) == 1
+    if has_key(g:phpTestsOptions, l:options[0])
+      echo 'PHP Test option ' . l:options[0] . ': ' . g:phpTestsOptions[l:options[0]]
+      return
+    else
+      echoerr 'No PHP test option "' . l:options[0] . '"'
+    endif
+    return
+  endif
+    
+  for l:i in range(0, float2nr(len(l:options) / 2) - 1)
+    let l:option = l:options[l:i]
+    let l:value = l:options[l:i + 1]
+
+    if has_key(g:phpTestsOptions, l:option)
+      let g:phpTestsOptions[l:option] = l:value
+    else
+      echoerr 'No PHP test option "' . l:option . '" to set'
+    endif
+  endfor
+
+  if len(l:options) % 2 == 1
+    call phpTests#option(l:options[-1])
+  endif
+endfunction
+
+function! phpTests#optionList(argLead, cmd, P)
+  let l:matches = []
+  " If we already have a word, no more
+  if match(a:cmd, '^PhpTestOption \w\+ ') == 0
+    return []
+  endif
+
+  for l:key in keys(g:phpTestsOptions)
+    if a:argLead == strpart(l:key, 0, strlen(a:argLead))
+      call add(l:matches, l:key)
+    endif
+  endfor
+
+  return l:matches
+endfunction
+
+command! -nargs=+ -complete=customlist,phpTests#optionList PhpTestOption call phpTests#option(<q-args>)
+
+function! phpTests#getOption(option)
+  return g:phpTestsOptions[option]
+endfunction 
+
 function! phpTests#startFiltered(filter)
   if exists('s:testJob')
     echo "Already running a test in the background"
     return
   endif
 
-  let g:phpTestsLastFilter = a:filter
-  let l:environmentVars = (g:phpTestsDebug ? (g:phpTestsDebugEnvironment . ' ') : '') . g:phpTestsEnvironmentVars
+  let s:lastTestFilter = a:filter
 
-  if g:phpTestsSSH != ''
-    let l:ssh = (g:phpTestsDebug ? g:phpTestsDebugSSH : g:phpTestsSSH) . ' '
+  let l:opt = g:phpTestsOptions
+  if l:opt['Debug']
+    let l:environment = l:opt['DebugEnvironment'] . ' ' . l:opt['Environment']
   else
-    let l:ssh = ''
+    let l:environment = l:opt['Environment']
   endif
 
-  let l:command = l:ssh . l:environmentVars . " " . g:phpTestsInterpreter . " " . g:phpTestsPHPUnit . " " . g:phpTestsOutputFormat . " " . a:filter
+  if l:opt['DebugShell'] && l:opt['Debug']
+    let l:shell = l:opt['DebugShell']
+  elseif g:phpTestsOptions['Shell'] != ''
+    let l:shell = l:opt['Shell']
+  else
+    let l:shell = ''
+  endif
+
+  let l:command = l:shell . ' ' . l:environment . ' ' . g:phpTestsOptions['Interpreter'] . ' ' . g:phpTestsOptions['PHPUnit'] . ' ' . g:phpTestsOptions['OutputFormat'] . ' ' . a:filter
   let s:indent = 0
 
   " Open a 10 line window and move it to the bottom
   call phpTests#open()
+  call phpTests#addOutput('shell=' . l:shell)
   call phpTests#addOutput('')
   call phpTests#addOutput('Starting tests [' . a:filter . ']')
   call phpTests#addLine("$ " . l:command)
@@ -360,25 +482,26 @@ function! phpTests#startFiltered(filter)
         \ 'close_cb': 'phpTests#handleClose'
   \ })
 
-  if g:phpTestsDebug && g:phpTestsDebugCommand != ''
-    exec g:phpTestsDebugCommand
+  if g:phpTestsOptions['Debug'] && g:phpTestsOptions['DebugCommand'] != ''
+    exec g:phpTestsOptions['DebugCommand']
   endif
 
 endfunction
 
 function! phpTests#startAgain()
-  if g:phpTestsLastFilter == ''
+  if s:lastTestFilter == ''
+    echo 'No test  to start again!'
     return
   endif
 
-  call phpTests#startFiltered(g:phpTestsLastFilter)
+  call phpTests#startFiltered(s:lastTestFilter)
 endfunction
 
 function! phpTests#start()
   if exists('b:phpTestsTarget')
     let target = b:phpTestsTarget
   else
-    let target = g:phpTestsTarget
+    let target = g:phpTestsOptions['Target']
   endif
 
   call phpTests#startFiltered(l:target)
@@ -388,4 +511,6 @@ function! phpTests#stop()
   if exists('s:testJob')
     call job_stop(s:testJob)
   endif
+  unlet! s:testJob
+  python3 debugger and debugger.close()
 endfunction
